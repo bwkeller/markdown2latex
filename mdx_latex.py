@@ -108,25 +108,21 @@ class LaTeXExtension(markdown.Extension):
 
         # remove escape pattern -- \\(.*) -- as this messes up any embedded
         # math and we don't need to escape stuff any more for html
-        for pat in self.md.inlinePatterns:
-            if pat.pattern == markdown.ESCAPE_RE:
-                idx = self.md.inlinePatterns.index(pat)
-                del self.md.inlinePatterns[idx]
-                break
+		del md.inlinePatterns['escape']
 
         # Insert a post-processor that would actually add the footnote div
         postprocessor = LaTeXPostProcessor()
-        md.postprocessors.append(postprocessor)
+        md.postprocessors.add(postprocessor)
 
         math_pp = MathTextPostProcessor()
         table_pp = TableTextPostProcessor()
         image_pp = ImageTextPostProcessor()
         unescape_html_pp = UnescapeHtmlTextPostProcessor()
-        md.textPostprocessors.append(math_pp)
-        md.textPostprocessors.append(table_pp)
-        md.textPostprocessors.append(image_pp)
+        md.textPostprocessors.add(math_pp)
+        md.textPostprocessors.add(table_pp)
+        md.textPostprocessors.add(image_pp)
         # run last
-        md.textPostprocessors.append(unescape_html_pp)
+        md.textPostprocessors.add(unescape_html_pp)
 
         footnote_extension = FootnoteExtension()
         footnote_extension.extendMarkdown(md, md_globals)
@@ -135,7 +131,7 @@ class LaTeXExtension(markdown.Extension):
         pass
 
 
-class LaTeXPostProcessor(markdown.Postprocessor):
+class LaTeXPostProcessor(markdown.postprocessors.Postprocessor):
 
     def run(self, doc):
         '''Walk the dom converting relevant nodes to text nodes with relevant
@@ -226,7 +222,7 @@ class LaTeXPostProcessor(markdown.Postprocessor):
             buffer = subcontent
         return buffer
 
-class UnescapeHtmlTextPostProcessor(markdown.TextPostprocessor):
+class UnescapeHtmlTextPostProcessor(markdown.postprocessor.UnescapePostProcessor):
 
     def run(self, text):
         return unescape_html_entities(text)
