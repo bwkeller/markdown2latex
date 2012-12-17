@@ -60,22 +60,40 @@ __version__ = '1.3.1'
 import re
 import sys
 import markdown
+from markdown.util import etree
 
 start_single_quote_re = re.compile("""(^|\s|")'""")
 start_double_quote_re = re.compile('''(^|\s|'|`)"''')
 end_double_quote_re = re.compile('"(,|\.|\s|$)')
 
-def unescape_html_entities(text):
-	out = text.replace('&amp;', '&')
+def fix_html_blocks(text):
+	out = text.replace('<ul>', '\\begin{itemize}')
+	out = out.replace('</ul>', '\\end{itemize}\n')
+	out = out.replace('<ol>', '\\begin{enumerate}')
+	out = out.replace('</ol>', '\\end{enumerate}\n')
+	out = out.replace('<em>', '\\emph{')
+	out = out.replace('</em>', '}')
+	out = out.replace('<blockquote>', '\\begin{quotation}')
+	out = out.replace('</blockquote>', '\\end{quotation}\n')
+	out = out.replace('<pre><code>', '\\begin{verbatim}')
+	out = out.replace('</code></pre>', '\\end{verbatim}\n')
+	return out
+
+def remove_html_entities(text):
+	out = text.replace('&amp;', '\&')
 	out = out.replace('&lt;', '<')
 	out = out.replace('&gt;', '<')
 	out = out.replace('&quot;', '"')
+	html_tags = ['h1', 'h2', 'h3', 'h4', 'p', 'li',]
+	for tag in html_tags:
+		out = out.replace('<%s>' % tag, '')
+		out = out.replace('</%s>' % tag, '')
 	return out
 
 def escape_latex_entities(text):
 	"""Escape latex reserved characters."""
 	out = text
-	out = unescape_html_entities(out)
+	out = remove_html_entities(out)
 	out = out.replace('%', '\\%')
 	out = out.replace('&', '\\&')
 	out = out.replace('#', '\\#')
@@ -201,18 +219,18 @@ class LaTeXExtension(markdown.Extension):
 		del md.inlinePatterns['escape']
 
 		# Insert a post-processor that would actually add the footnote div
-		postprocessor = LaTeXPostProcessor()
-		md.postprocessors['latex'] = postprocessor
+		treeprocessor = LaTeXTreeProcessor()
+		md.treeprocessors['latex'] = treeprocessor
 
 		math_pp = MathTextPostProcessor()
 		table_pp = TableTextPostProcessor()
 		image_pp = ImageTextPostProcessor()
-		unescape_html_pp = UnescapeHtmlTextPostProcessor()
+		remove_html_pp = UnescapeHtmlTextPostProcessor()
 		md.postprocessors['math'] = math_pp
 		md.postprocessors['table'] = table_pp
 		md.postprocessors['image'] = image_pp
 		# run last
-		md.postprocessors['unescape_html'] = unescape_html_pp 
+		md.postprocessors['remove_html'] = remove_html_pp 
 
 		footnote_extension = FootnoteExtension()
 		footnote_extension.extendMarkdown(md)
@@ -221,101 +239,41 @@ class LaTeXExtension(markdown.Extension):
 		pass
 
 
-class LaTeXPostProcessor(markdown.postprocessors.Postprocessor):
+class LaTeXTreeProcessor(markdown.treeprocessors.Treeprocessor):
 
-	def run(self, doc):
+	def run(self, root):
 		'''Walk the dom converting relevant nodes to text nodes with relevant
 		content.'''
-		latex_text = self.tolatex(doc.documentElement)
-		# attach latex text as only element
-		# have to put it in a p tag as text node for document element does not
-		# work ...
-		#
-		# with stripTopLevelTags True (default) convert strips out first 23 and
-		# last 7 chars
-		# (this is the extra stuff added in by Markdown._transform ...)
-		# <span> = 6, </span> = 7
-		latex_text = 'X' * 17 + latex_text
-		# do not use p or li as they result in indentation
-		latex_node = doc.createElement('span', latex_text)
-		doc.appendChild(latex_node)
+		return self.tolatex(root)
 
 	def tolatex(self, ournode):
-		buffer = ""
-		subcontent = ""
-
-		if ournode.type == 'text':
-			text = escape_latex_entities(ournode.value)
-			return text
-
-		if ournode.childNodes or ournode.nodeName in ['blockquote']:
-			for child in ournode.childNodes :
-				subcontent += self.tolatex(child)
-
-		if ournode.nodeName == 'h1':
-			buffer += '\n\\title{%s}\n' % subcontent
-			buffer += '''
+		for elem in list(ournode):
+			if len(list(elem)) > 0:
+				self.tolatex(elem)
+			if elem.tag == 'h1':
+				elem.text = '\n\\title{%s}\n' % elem.text
+				elem.text += '''
 % ----------------------------------------------------------------
 \maketitle
 % ----------------------------------------------------------------
 '''
-		elif ournode.nodeName == 'h2':
-			buffer += '\n\n\\section{%s}\n' % subcontent
-		elif ournode.nodeName == 'h3':
-			buffer += '\n\n\\subsection{%s}\n' % subcontent
-		elif ournode.nodeName == 'h4':
-			buffer += '\n\\subsubsection{%s}\n' % subcontent
-		elif ournode.nodeName == 'ul':
-			# no need for leading \n as one will be provided by li
-			buffer += '''
-\\begin{itemize}%s
-\\end{itemize}
-''' % subcontent
-		elif ournode.nodeName == 'ol':
-			# no need for leading \n as one will be provided by li
-			buffer += '''
-\\begin{enumerate}%s
-\\end{enumerate}
-''' % subcontent
-		elif ournode.nodeName == 'li':
-			buffer += '''
-  \\item %s''' % subcontent.strip()
-		elif ournode.nodeName == 'blockquote':
-			# use quotation rather than quote as quotation can support multiple
-			# paragraphs
-			buffer += '''
-\\begin{quotation}
-%s
-\\end{quotation}
-''' % subcontent.strip()
-		# ignore 'code' when inside pre tags
-		# (mkdn produces <pre><code></code></pre>)
-		elif (ournode.nodeName == 'pre' or
-			(ournode.nodeName == 'pre' and ournode.parentNode.nodeName != 'pre')):
-			buffer += '''
-\\begin{verbatim}
-%s
-\\end{verbatim}
-''' % subcontent.strip()
-		elif ournode.nodeName == 'q':
-			buffer += "`%s'" % subcontent.strip()
-		elif ournode.nodeName == 'p':
-			buffer += '\n%s\n' % subcontent.strip()
-		# Footnote processor inserts all of the footnote in a sup tag
-		elif ournode.nodeName == 'sup':
-			buffer += '\\footnote{%s}' % subcontent.strip()
-		elif ournode.nodeName == 'strong':
-			buffer += '\\textbf{%s}' % subcontent.strip()
-		elif ournode.nodeName == 'em':
-			buffer += '\\emph{%s}' % subcontent.strip()
-		else:
-			buffer = subcontent
-		return buffer
+			if elem.tag == 'h2':
+				elem.text = '\n\\section{%s}\n' % elem.text
+			if elem.tag == 'h3':
+				elem.text = '\n\\subsection{%s}\n' % elem.text
+			if elem.tag == 'h4':
+				elem.text = '\n\\subsubsection{%s}\n' % elem.text
+			if elem.tag == 'li':
+				elem.text = '''  \\item %s''' % elem.text
+			if elem.tag == 'p':
+				elem.text = '%s\n' % elem.text
+
 
 class UnescapeHtmlTextPostProcessor(markdown.postprocessors.UnescapePostprocessor):
 
 	def run(self, text):
-		return unescape_html_entities(text)
+		text = fix_html_blocks(text)
+		return remove_html_entities(text)
 
 # ========================= MATHS =================================
 
@@ -328,6 +286,7 @@ class MathTextPostProcessor(markdown.postprocessors.Postprocessor):
 		This assumes you are using $$ as your mathematics delimiter (*not* the
 		standard asciimathml or latexmathml delimiter).
 		"""
+		
 		def repl_1(matchobj):
 			text = unescape_latex_entities(matchobj.group(1))
 			tmp = text.strip()
@@ -339,7 +298,7 @@ class MathTextPostProcessor(markdown.postprocessors.Postprocessor):
 		   text = unescape_latex_entities(matchobj.group(1))
 		   return '$%s$' % text
 		# $$ ..... $$
-		pat = re.compile('^\$\$([^\$]*)\$\$\s*$', re.MULTILINE)
+		pat = re.compile('<p>\$\$([^\$]*)\$\$', re.MULTILINE)
 		out = pat.sub(repl_1, instr)
 		# $100 million
 		pat2 = re.compile('([^\$])\$([^\$])')
@@ -347,6 +306,8 @@ class MathTextPostProcessor(markdown.postprocessors.Postprocessor):
 		# Jones, $$x=3$$, is ...
 		pat3 = re.compile('\$\$([^\$]*)\$\$')
 		out = pat3.sub(repl_2, out)
+		# Percentage signs
+		out = re.sub('\%(?!\s-*)', '\\%', out)
 		# some extras due to asciimathml
 		out = out.replace('\\lt', '<')
 		out = out.replace(' * ', ' \\cdot ')
@@ -366,17 +327,27 @@ class TableTextPostProcessor(markdown.postprocessors.Postprocessor):
 			line above and below)
 			2. no nesting of tables 
 		"""
+		tablematch = re.compile('<table.*</table>', re.DOTALL)
+		tables = tablematch.findall(instr)
+		nontables = tablematch.split(instr)
 		converter = Table2Latex()
 		new_blocks = []
-		for block in instr.split("\n\n") :
-			stripped = block.strip()
-			# <table catches modified verions (e.g. <table class="..">
-			if stripped.startswith('<table') and stripped.endswith('</table>'):
-				latex_table = converter.convert(stripped).strip()
-				new_blocks.append(latex_table)
-			else :
-				new_blocks.append(block)
-		return '\n\n'.join(new_blocks)
+		while len(nontables) > 0:
+			new_blocks.append(nontables.pop())
+			new_blocks.append(converter.convert(tables.pop()).strip())
+			new_blocks.append(nontables.pop())
+		new_blocks.reverse()
+		return '\n'.join(new_blocks)
+		#for block in instr.split("\n\n") :
+			#stripped = block.strip()
+			## <table catches modified verions (e.g. <table class="..">
+			#if stripped.startswith('<table') and stripped.endswith('</table>'):
+				#latex_table = converter.convert(stripped).strip()
+				#new_blocks.append(latex_table)
+			#else :
+				#new_blocks.append(block)
+		#raise Exception()
+		#return '\n\n'.join(new_blocks)
 
 import xml.dom.minidom
 class Table2Latex:
@@ -498,15 +469,16 @@ class ImageTextPostProcessor(markdown.postprocessors.Postprocessor):
 		"""
 		converter = Img2Latex()
 		new_blocks = []
-		for block in instr.split("\n\n") :
+		for block in instr.split("\n") :
 			stripped = block.strip()
+			stripped = stripped.replace('<p>', '')
 			# <table catches modified verions (e.g. <table class="..">
 			if stripped.startswith('<img'):
 				latex_img = converter.convert(stripped).strip()
 				new_blocks.append(latex_img)
 			else :
 				new_blocks.append(block)
-		return '\n\n'.join(new_blocks)
+		return '\n'.join(new_blocks)
 
 class Img2Latex(object):
 
@@ -641,12 +613,12 @@ class FootnotePattern(markdown.inlinepatterns.Pattern):
 		markdown.inlinepatterns.Pattern.__init__(self, pattern)
 		self.footnotes = footnotes
 
-	def handleMatch(self, m, doc) :
-		sup = doc.createElement('sup')
-		id = m.group(2)
+	def handleMatch(self, mdoc) :
+		el = etree.Element('sup')
+		el.text = mdoc.group(2)
 		# stick the footnote text in the sup
-		self.footnotes.md._processSection(sup, self.footnotes.footnotes[id].split("\n"))
-		return sup
+		#self.footnotes.md._processSection(el, self.footnotes.footnotes[id].split("\n"))
+		return el 
 
 def template(template_fo, latex_to_insert):
 	tmpl = template_fo.read()

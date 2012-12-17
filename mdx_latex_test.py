@@ -103,6 +103,7 @@ on
 
 A big quote that goes on, and on, and on, and on, and on, and on, and on, and
 on
+
 \\end{quotation}
 
 Some mathematics inline, $X$, a \\$100 million, a \\%tage and then a formula:
