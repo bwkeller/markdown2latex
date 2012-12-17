@@ -115,7 +115,6 @@ A paragraph with a\\footnote{a very dull footnote indeed
 but it does have mutiple paragraphs.} footnote in it\\footnote{a very dull footnote indeed
 
 but it does have mutiple paragraphs.}.
-
 A table now (this is \\emph{really} complicated):
 
 \\begin{table}
@@ -131,6 +130,7 @@ A table now (this is \\emph{really} complicated):
 \\\\[5pt]
 \\caption{My Caption}
 \\end{table}
+
 
 Now let's try having an image:
 
