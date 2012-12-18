@@ -302,8 +302,11 @@ class MathTextPostProcessor(markdown.postprocessors.Postprocessor):
 		   text = unescape_latex_entities(matchobj.group(1))
 		   return '$%s$' % text
 		# $$ ..... $$
-		pat = re.compile('<p>\$\$([^\$]*)\$\$', re.MULTILINE)
+		pat = re.compile('<p>\$\$([^\$]*)\$\$\s*$', re.MULTILINE)
 		out = pat.sub(repl_1, instr)
+		# $$ ..... $$
+		pat1 = re.compile('^\$\$([^\$]*)\$\$\s*$', re.MULTILINE)
+		out = pat1.sub(repl_1, out)
 		# $100 million
 		pat2 = re.compile('([^\$])\$([^\$])')
 		out = pat2.sub('\g<1>\\$\g<2>', out)
