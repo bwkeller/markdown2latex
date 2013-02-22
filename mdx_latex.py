@@ -214,8 +214,8 @@ class LaTeXExtension(markdown.Extension):
 		# run last
 		md.postprocessors['unescape_html'] = unescape_html_pp 
 
-		footnote_extension = FootnoteExtension()
-		footnote_extension.extendMarkdown(md)
+		#footnote_extension = FootnoteExtension()
+		#footnote_extension.extendMarkdown(md)
 
 	def reset(self) :
 		pass
@@ -641,11 +641,12 @@ class FootnotePattern(markdown.inlinepatterns.Pattern):
 		markdown.inlinepatterns.Pattern.__init__(self, pattern)
 		self.footnotes = footnotes
 
-	def handleMatch(self, m, doc) :
-		sup = doc.createElement('sup')
-		id = m.group(2)
-		# stick the footnote text in the sup
-		self.footnotes.md._processSection(sup, self.footnotes.footnotes[id].split("\n"))
+	def handleMatch(self, m) :
+		sup = markdown.util.etree.Element('sup')
+		#id = m.group(2)
+		## stick the footnote text in the sup
+		#self.footnotes.md._processSection(sup, self.footnotes.footnotes[id].split("\n"))
+		#while self.footnotes.footnotes[id].split("\n"):
 		return sup
 
 def template(template_fo, latex_to_insert):
